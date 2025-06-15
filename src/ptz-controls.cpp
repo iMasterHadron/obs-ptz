@@ -53,7 +53,7 @@ PTZControls *PTZControls::instance = NULL;
  * class buttonResizeFilter - Event filter to adjust button minimum height and resize icon
  *
  * This filter will update the minimumHeight property to keep a button square
- * when possible. It will also resize the button icon to match the button size.
+ * when possible.
  */
 class squareResizeFilter : public QObject {
 public:
@@ -64,14 +64,7 @@ public:
 		if (!obj || event->type() != QEvent::Resize)
 			return false;
 		auto resEvent = static_cast<QResizeEvent *>(event);
-
 		obj->setMinimumHeight(resEvent->size().width());
-
-		auto button = qobject_cast<QAbstractButton *>(watched);
-		if (button) {
-			int size = resEvent->size().width() * 2 / 3;
-			button->setIconSize(QSize(size, size));
-		}
 		return true;
 	}
 };
@@ -152,10 +145,18 @@ static void change_current_scene(int delta)
 	obs_source_release(cur);
 }
 
-PTZControls::PTZControls(QWidget *parent) : QWidget(parent), ui(new Ui::PTZControls)
+PTZControls::PTZControls(QWidget *parent) : QFrame(parent), ui(new Ui::PTZControls)
 {
 	instance = this;
 	ui->setupUi(this);
+
+	/* Compatability: Before OBS Studio 31.1.0 the theme had left and right
+	 * margins on widgets which mess with the grid layout used by this
+	 * plugin. If the version is earlier than 31.1.0 then apply an extra
+	 * style sheet to fix */
+	if (obs_get_version() < MAKE_SEMANTIC_VERSION(31, 1, 0))
+		this->setStyleSheet("margin-left: 0px; margin-right: 0px");
+
 	ui->cameraList->setModel(&ptzDeviceList);
 	ui->cameraList->setItemDelegate(new PTZDeviceListDelegate(ui->cameraList));
 	connect(&ptzDeviceList, SIGNAL(dataChanged(QModelIndex, QModelIndex)), this,
@@ -174,23 +175,10 @@ PTZControls::PTZControls(QWidget *parent) : QWidget(parent), ui(new Ui::PTZContr
 
 	LoadConfig();
 
+	/* Install an event filter to keep buttons square */
 	auto filter = new squareResizeFilter(this);
-	ui->panTiltButton_upleft->installEventFilter(filter);
-	ui->panTiltButton_up->installEventFilter(filter);
-	ui->panTiltButton_upright->installEventFilter(filter);
-	ui->panTiltButton_left->installEventFilter(filter);
-	ui->panTiltButton_home->installEventFilter(filter);
-	ui->panTiltButton_right->installEventFilter(filter);
-	ui->panTiltButton_downleft->installEventFilter(filter);
-	ui->panTiltButton_down->installEventFilter(filter);
-	ui->panTiltButton_downright->installEventFilter(filter);
-	ui->zoomButton_wide->installEventFilter(filter);
-	ui->zoomButton_tele->installEventFilter(filter);
-	ui->focusButton_auto->installEventFilter(filter);
-	ui->focusButton_near->installEventFilter(filter);
-	ui->focusButton_far->installEventFilter(filter);
-	ui->focusButton_onetouch->installEventFilter(filter);
-	ui->panTiltTouch->installEventFilter(filter);
+	ui->movementControlsWidget->installEventFilter(filter);
+	ui->pantiltStack->installEventFilter(filter);
 
 	obs_frontend_add_event_callback(OBSFrontendEventWrapper, this);
 
@@ -220,7 +208,7 @@ PTZControls::PTZControls(QWidget *parent) : QWidget(parent), ui(new Ui::PTZContr
 		return id;
 	};
 	auto cb = [](void *button_data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
-		QPushButton *button = static_cast<QPushButton *>(button_data);
+		auto *button = static_cast<QToolButton *>(button_data);
 		if (pressed)
 			button->pressed();
 		else
